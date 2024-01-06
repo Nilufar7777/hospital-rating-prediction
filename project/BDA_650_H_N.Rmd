@@ -1,0 +1,1123 @@
+---
+title: "BDA_650_H_N_Capstone"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, warning=FALSE}
+#Reading 5 years data from csv files and storing them in 5 different variables
+data_2016 <- read.csv("/Users/hema/Downloads/patient_satisfaction/cms_hospital_patient_satisfaction_2016.csv")
+data_2017 <- read.csv("/Users/hema/Downloads/patient_satisfaction/cms_hospital_patient_satisfaction_2017.csv")
+data_2018 <- read.csv("/Users/hema/Downloads/patient_satisfaction/cms_hospital_patient_satisfaction_2018.csv") 
+data_2019 <- read.csv("/Users/hema/Downloads/patient_satisfaction/cms_hospital_patient_satisfaction_2019.csv")
+data_2020 <- read.csv("/Users/hema/Downloads/patient_satisfaction/cms_hospital_patient_satisfaction_2020.csv")
+
+library(dplyr)
+# Deleting unimportant columns from the dataset that ends with footnote
+data_2016 <- data_2016 %>% select( -Phone.Number, -ends_with(".Footnote"))
+
+# Deleting unimportant columns from the dataset that ends with footnote
+data_2017 <- data_2017 %>% select( -Phone.Number, -ends_with(".Footnote"))
+
+# Deleting unimportant columns from the dataset that ends with footnote
+data_2018 <- data_2018 %>% select(-Phone.Number, -ends_with(".Footnote"))
+
+# Deleting unimportant columns from the dataset that ends with footnote
+data_2019 <- data_2019 %>% select( -Phone.Number, -ends_with(".Footnote"))
+
+# Deleting unimportant columns from the dataset that ends with footnote
+data_2020 <- data_2020 %>% select(-Phone.Number, -ends_with(".Footnote"))
+
+# Combining the datasets into one
+hosp <- rbind(data_2016,data_2017,data_2018,data_2019, data_2020)
+head(hosp)
+```
+
+
+```{r}
+# Renaming columns
+
+colnames(hosp)[colnames(hosp) == "Mortality.national.comparison"] <- "Mortality"
+colnames(hosp)[colnames(hosp) == "Readmission.national.comparison"] <- "Readmission"
+colnames(hosp)[colnames(hosp) == "Effectiveness.of.care.national.comparison"] <- "Effectiveness"
+colnames(hosp)[colnames(hosp) == "Efficient.use.of.medical.imaging.national.comparison"] <- "Efficient.imaging"
+colnames(hosp)[colnames(hosp) == "Patient.Survey.Star.Rating"] <- "Patient.Survey.Rate"
+colnames(hosp)[colnames(hosp) == "Safety.of.care.national.comparison"] <- "Safety"
+colnames(hosp)[colnames(hosp) == "Patient.experience.national.comparison"] <- "Patient.experience"
+colnames(hosp)[colnames(hosp) == "Timeliness.of.care.national.comparison"] <- "Timeliness"
+colnames(hosp)[colnames(hosp) == "HCAHPS.Question"] <- "Topics"
+colnames(hosp)[colnames(hosp) == "Number.of.Completed.Surveys"] <- "No_Surveys"
+colnames(hosp)[colnames(hosp) == "Hospital.overall.rating"] <- "Hosp.rating"
+colnames(hosp)[colnames(hosp) == "Meets.criteria.for.promoting.interoperability.of.EHRs"] <- "EHR_criteria"
+colnames(hosp)[colnames(hosp) == "HCAHPS.Linear.Mean.Value"] <- "Mean.score"
+colnames(hosp)[colnames(hosp) == "HCAHPS.Answer.Percent"] <- "Ans.perc"
+colnames(hosp)[colnames(hosp) == "Survey.Response.Rate.Percent"] <- "Response.rate.perc"
+colnames(hosp)[colnames(hosp) == "HCAHPS.Answer.Description"] <- "Ans.desc"
+colnames(hosp)[colnames(hosp) == "HCAHPS.Measure.ID"] <- "Measure.ID"
+
+
+# Removing phone number var
+
+hosp$Phone.Number <-NULL
+hosp$ZIP.Code <-NULL
+hosp$Start.Date <-NULL
+hosp$End.Date <-NULL
+hosp$Measure.ID <- NULL
+```
+
+```{r}
+# Extracting star ratings from patient survey data, discarding rows with 'Not Applicable' or 'Not Available' values
+star_ratings <- hosp %>%
+  filter(`Patient.Survey.Rate` != 'Not Applicable' & `Patient.Survey.Rate` != 'Not Available')
+
+# Extracting linear mean values from patient survey data, discarding rows with 'Not Applicable' or 'Not Available' values
+LMVs <- hosp %>%
+  filter(`Mean.score` != 'Not Applicable' & `Mean.score` != 'Not Available')
+```
+
+```{r}
+#creating "summary_str_rate" df with only rows that has value Topics == 'Summary star rating'
+summary_str_rate <- star_ratings[star_ratings$Topics == 'Summary star rating', ]
+```
+
+```{r}
+# Creating "hospitals_data" df with only specific columns
+hospitals_data <- dplyr::select(summary_str_rate,
+                               `Facility.ID`, `Facility.Name`, `Address`, `City`,
+                               `State`, `County.Name`, `Year`, `Hospital.Type`, `Hospital.Ownership`,
+                               `Emergency.Services`, `EHR_criteria`, `Hosp.rating`, `Mortality`,
+                               `Safety`, `Readmission`, `Effectiveness`, `Timeliness`,
+                               `Efficient.imaging`, `Patient.Survey.Rate`)
+```
+
+```{r}
+# checking if "Not Available" Values are present in "Hosp.rating"
+any(hospitals_data$Hosp.rating %in% c('Not Available'))
+
+# Dropping rows where value is "Not Available" from the dataset
+hospitals_data <- hospitals_data[!hospitals_data$Hosp.rating %in% c('Not Available'), ]
+
+# converting Hosp,rating column to numeric
+hospitals_data$Hosp.rating <- as.numeric(hospitals_data$Hosp.rating)
+
+# Replace 'Y' with 1 and blanks with 0 in the 'EHR_criteria' column
+hospitals_data$EHR_criteria <- ifelse(hospitals_data$EHR_criteria == 'Y', 1, ifelse(hospitals_data$EHR_criteria == '', 0, hospitals_data$EHR_criteria))
+
+```
+
+```{r}
+# Extracting the "Cleanliness star ratings" and merging with hospitals_data
+
+cleanliness_star_Rate <- star_ratings %>% 
+  filter(Topics == 'Cleanliness - star rating') %>% 
+  select(Facility.ID, Year, Patient.Survey.Rate) %>% 
+  rename(cleanliness_star_Rate_Rating = Patient.Survey.Rate)
+
+hospitals_data <- merge(hospitals_data, cleanliness_star_Rate, by = c("Facility.ID", "Year"))
+
+# Extracting "Nurse Communication star ratings" and merging with hospitals_data
+nurse_commu_star_rate <- star_ratings %>%
+  filter(Topics == 'Nurse communication - star rating') %>%
+  select(`Facility.ID`, Year, `Patient.Survey.Rate`) %>%
+  rename(Nurse_Communication_Star_Rating = `Patient.Survey.Rate`)
+
+hospitals_data <- merge(hospitals_data, nurse_commu_star_rate, by = c("Facility.ID", "Year"))
+
+# Extracting "doctor communication star rating" and merging with hospitals_data
+doc_commu_star_rate <- star_ratings %>%
+  filter(Topics == 'Doctor communication - star rating') %>%
+  select(`Facility.ID`, Year, `Patient.Survey.Rate`) %>%
+  rename(Doctor_Communication_Star_Rating = `Patient.Survey.Rate`)
+
+hospitals_data <- merge(hospitals_data, doc_commu_star_rate, by = c("Facility.ID", "Year"))
+
+# Extracting "staff response star rating" and merging with hospitals_data
+staff_response_star_rate <- star_ratings %>%
+  filter(Topics == 'Staff responsiveness - star rating') %>%
+  select(`Facility.ID`, Year, `Patient.Survey.Rate`) %>%
+  rename(Staff_Responsiveness_Star_Rating = `Patient.Survey.Rate`)
+
+hospitals_data <- merge(hospitals_data, staff_response_star_rate, by = c("Facility.ID", "Year"))
+
+# Extracting "Pain Management star ratings" and merging with hospitals_data
+pain_Mang_star_rate <- star_ratings %>%
+  filter(Topics == 'Pain management - star rating') %>%
+  select(`Facility.ID`, Year, `Patient.Survey.Rate`) %>%
+  rename(Pain_Management_Star_Rating = `Patient.Survey.Rate`)
+
+hospitals_data <- merge(hospitals_data, pain_Mang_star_rate, by = c("Facility.ID", "Year"))
+
+# Extracting "Communication About Medicines star ratings" and merging with hospitals_data
+medicine_commu_star_rate <- star_ratings %>%
+  filter(Topics == 'Communication about medicines - star rating') %>%
+  select(`Facility.ID`, Year, `Patient.Survey.Rate`) %>%
+  rename(Communication_About_Medicine_Star_Rating = `Patient.Survey.Rate`)
+
+hospitals_data <- merge(hospitals_data, medicine_commu_star_rate, by = c("Facility.ID", "Year"))
+
+# Extracting "Discharge Information star ratings" and merging with hospitals_data
+disch_info_sta_rate <- star_ratings %>%
+  filter(Topics == 'Discharge information - star rating') %>%
+  select(`Facility.ID`, Year, `Patient.Survey.Rate`) %>%
+  rename(Discharge_Info_Star_Rating = `Patient.Survey.Rate`)
+
+hospitals_data <- merge(hospitals_data, disch_info_sta_rate, by = c("Facility.ID", "Year"))
+
+# Extracting "Care Transition star ratings" and merging with hospitals_data
+care_trans_star_rate <- star_ratings %>%
+  filter(Topics == 'Care transition - star rating') %>%
+  select(`Facility.ID`, Year, `Patient.Survey.Rate`) %>%
+  rename(Care_Transition_Star_Rating = `Patient.Survey.Rate`)
+
+hospitals_data <- merge(hospitals_data, care_trans_star_rate, by = c("Facility.ID", "Year"))
+
+# Extracting "Overall Hospital Rating star ratings" and merging with hospitals_data
+hosp_rating_star_rate <- star_ratings %>%
+  filter(Topics == 'Overall hospital rating - star rating') %>%
+  select(`Facility.ID`, Year, `Patient.Survey.Rate`) %>%
+  rename(Hospital_Rating_Star_Rating = `Patient.Survey.Rate`)
+
+hospitals_data <- merge(hospitals_data, hosp_rating_star_rate, by = c("Facility.ID", "Year"))
+
+# Extracting "Quietness star ratings" and merging with hospitals_data
+quietness_star_rate <- star_ratings %>%
+  filter(Topics == 'Quietness - star rating') %>%
+  select(`Facility.ID`, Year, `Patient.Survey.Rate`) %>%
+  rename(Quietness_Star_Rating = `Patient.Survey.Rate`)
+
+hospitals_data <- merge(hospitals_data, quietness_star_rate, by = c("Facility.ID", "Year"))
+
+
+# Extracting "Recommend hospital star ratings" and merging with hospitals_data
+recommend_hosp_star_rate <- star_ratings %>%
+  filter(Topics == 'Recommend hospital - star rating') %>%
+  select(`Facility.ID`, Year, `Patient.Survey.Rate`) %>%
+  rename(Recommendation_Star_Rating = `Patient.Survey.Rate`)
+
+hospitals_data <- merge(hospitals_data, recommend_hosp_star_rate, by = c("Facility.ID", "Year"))
+#dim(hospitals_data)
+#colnames(hospitals_data)
+# Extracting "Cleanliness linear mean score" and merging with hospitals_data
+cleanliness_LinMeaScore <- LMVs %>%
+  filter(Topics == 'Cleanliness - linear mean score') %>%
+  select(`Facility.ID`, Year, `Mean.score`) %>%
+  rename(cleanliness_LinMeaScore = `Mean.score`)
+
+hospitals_data <- merge(hospitals_data, cleanliness_LinMeaScore, by = c("Facility.ID", "Year"))
+
+
+# Extracting "Nurse Communication linear mean score" and merging with hospitals_data
+nurse_comm_LinMeaScore <- LMVs %>%
+  filter(Topics == 'Nurse communication - linear mean score') %>%
+  select(`Facility.ID`, Year, `Mean.score`) %>%
+  rename(nurse_comm_LinMeaScore = `Mean.score`)
+
+hospitals_data <- merge(hospitals_data, nurse_comm_LinMeaScore, by = c("Facility.ID", "Year"))
+
+
+# Extracting "Doctor Communication linear mean score" and merging with hospitals_data
+doc_comm_LinMeaScore <- LMVs %>%
+  filter(Topics == 'Doctor communication - linear mean score') %>%
+  select(`Facility.ID`, Year, `Mean.score`) %>%
+  rename(doc_comm_LinMeaScore = `Mean.score`)
+
+hospitals_data <- merge(hospitals_data, doc_comm_LinMeaScore, by = c("Facility.ID", "Year"))
+
+
+# Extracting "Staff Responsiveness linear mean score" and merging with hospitals_data
+staff_response_LinMeaScore <- LMVs %>%
+  filter(Topics == 'Staff responsiveness - linear mean score') %>%
+  select(`Facility.ID`, Year, `Mean.score`) %>%
+  rename(staff_response_LinMeaScore = `Mean.score`)
+
+# Merge the staff_response_LinMeaScore data with hospitals_data
+hospitals_data <- merge(hospitals_data, staff_response_LinMeaScore, by = c("Facility.ID", "Year"))
+
+# Display dimensions of the resulting hospitals_data
+
+
+# Extracting "Pain Management linear mean score" and merging with hospitals_data
+pain_mang_LinMeaScore <- LMVs %>%
+  filter(Topics == 'Pain management - linear mean score') %>%
+  select(`Facility.ID`, Year, `Mean.score`) %>%
+  rename(pain_mang_LinMeaScore = `Mean.score`)
+
+hospitals_data <- merge(hospitals_data, pain_mang_LinMeaScore, by = c("Facility.ID", "Year"))
+
+
+# Extracting "Communication About Medicines linear mean score" and merging with hospitals_data
+med_commu_LinMeaScore <- LMVs %>%
+  filter(Topics == 'Communication about medicines - linear mean score') %>%
+  select(`Facility.ID`, Year, `Mean.score`) %>%
+  rename(med_commu_LinMeaScore = `Mean.score`)
+
+
+hospitals_data <- merge(hospitals_data, med_commu_LinMeaScore, by = c("Facility.ID", "Year"))
+
+
+# Extracting "Discharge Information linear mean score" and merging with hospitals_data
+discharge_info_LinMeaScore <- LMVs %>%
+  filter(Topics == 'Discharge information - linear mean score') %>%
+  select(`Facility.ID`, Year, `Mean.score`) %>%
+  rename(discharge_info_LinMeaScore = `Mean.score`)
+
+hospitals_data <- merge(hospitals_data, discharge_info_LinMeaScore, by = c("Facility.ID", "Year"))
+
+
+# Extracting "Care Transition linear mean score" and merging with hospitals_data
+care_trans_LinMeaScore <- LMVs %>%
+  filter(Topics == 'Care transition - linear mean score') %>%
+  select(`Facility.ID`, Year, `Mean.score`) %>%
+  rename(care_trans_LinMeaScore = `Mean.score`)
+
+hospitals_data <- merge(hospitals_data, care_trans_LinMeaScore, by = c("Facility.ID", "Year"))
+
+
+# Extracting "Overall Hospital Rating linear mean score" and merging with hospitals_data
+hosp_rate_LinMeaScore <- LMVs %>%
+  filter(Topics == 'Overall hospital rating - linear mean score') %>%
+  select(`Facility.ID`, Year, `Mean.score`) %>%
+  rename(hosp_rate_LinMeaScore = `Mean.score`)
+
+hospitals_data <- merge(hospitals_data, hosp_rate_LinMeaScore, by = c("Facility.ID", "Year"))
+
+
+# Extracting "Quietness linear mean score" and merging with hospitals_data
+quietness_LinMeaScore <- LMVs %>%
+  filter(Topics == 'Quietness - linear mean score') %>%
+  select(`Facility.ID`, Year, `Mean.score`) %>%
+  rename(quietness_LinMeaScore = `Mean.score`)
+
+hospitals_data <- merge(hospitals_data, quietness_LinMeaScore, by = c("Facility.ID", "Year"))
+
+
+# Extracting "Recommendation linear mean score" and merging with hospitals_data
+recommend_LinMeaScore <- LMVs %>%
+  filter(Topics == 'Recommend hospital - linear mean score') %>%
+  select(`Facility.ID`, Year, `Mean.score`) %>%
+  rename(recommend_LinMeaScore = `Mean.score`)
+
+hospitals_data <- merge(hospitals_data, recommend_LinMeaScore, by = c("Facility.ID", "Year"))
+#dim(hospitals_data)
+#str(hospitals_data)
+```
+
+```{r}
+library(dplyr)
+
+# Removing "not Available" and converting 'National' to 'national' for specified columns
+variables_to_clean <- c("Mortality", "Safety", "Readmission", "Timeliness", "Efficient.imaging", "Effectiveness")
+
+for (variable in variables_to_clean) {
+  # Converting 'National' to 'national'
+  hospitals_data[[variable]] <- gsub("\\bNational\\b", "national", hospitals_data[[variable]], ignore.case = TRUE)
+  
+  # Removing rows with "not Available"
+  hospitals_data <- hospitals_data[!hospitals_data[[variable]] %in% "Not Available", ]
+}
+
+# Checking unique values after cleaning
+for (variable in variables_to_clean) {
+  print(unique(hospitals_data[[variable]]))
+}
+```
+
+```{r}
+# Converting specific columns to numeric in hospitals_data
+numeric_columns <- 19:41  
+for (col_index in numeric_columns) {
+  hospitals_data[, col_index] <- as.numeric(unlist(hospitals_data[, col_index]))
+}
+```
+
+```{r}
+# Creating binary variables for  hospital rating variable 
+hospitals_data$hosp_rate <- ifelse(hospitals_data$Hosp.rating >=4, 1, 0)
+
+# Converting star rating variables to factors
+hospitals_data$hosp_rate <- factor(hospitals_data$hosp_rate)
+
+#checking levels
+levels(hospitals_data$hosp_rate)
+```
+
+```{r}
+#creating duplicate dataframe of hospitals_data and converting Hosp.rating to factor
+hospitals_data1 <- hospitals_data
+hospitals_data1$Hosp.rating <- as.factor(hospitals_data1$Hosp.rating)
+```
+
+```{r}
+# creating a constant column 'n' with value 1 to hospitals_data for potential counting or summarization.
+hospitals_data$n = 1
+```
+
+```{r}
+# Grouping the hospital data by Facility.Name, Facility.ID, calculating the mean for different ratings and survey responses.
+hospitals_data_agg <- hospitals_data %>%
+  group_by(Facility.Name, Facility.ID) %>%
+  summarize(Hosp.rating=mean(Hosp.rating),
+            Patient.Survey.Rate=mean(Patient.Survey.Rate),
+            cleanliness_star_Rate_Rating=mean(cleanliness_star_Rate_Rating),
+            Nurse_Communication_Star_Rating=mean(Nurse_Communication_Star_Rating),
+            Doctor_Communication_Star_Rating=mean(Doctor_Communication_Star_Rating),
+            Staff_Responsiveness_Star_Rating=mean(Staff_Responsiveness_Star_Rating),
+            Communication_About_Medicine_Star_Rating=mean(Communication_About_Medicine_Star_Rating),
+            Discharge_Info_Star_Rating=mean(Discharge_Info_Star_Rating),
+            Care_Transition_Star_Rating=mean(Care_Transition_Star_Rating),
+            Hospital_Rating_Star_Rating=mean(Hospital_Rating_Star_Rating),
+            Quietness_Star_Rating=mean(Quietness_Star_Rating),
+            Recommendation_Star_Rating=mean(Recommendation_Star_Rating),
+            cleanliness_LinMeaScore=mean(cleanliness_LinMeaScore),
+            nurse_comm_LinMeaScore=mean(nurse_comm_LinMeaScore),
+            doc_comm_LinMeaScore=mean(doc_comm_LinMeaScore),
+            staff_response_LinMeaScore=mean(staff_response_LinMeaScore),
+             med_commu_LinMeaScore=mean( med_commu_LinMeaScore),
+            discharge_info_LinMeaScore=mean(discharge_info_LinMeaScore),
+            care_trans_LinMeaScore=mean(care_trans_LinMeaScore),
+            hosp_rate_LinMeaScore=mean(hosp_rate_LinMeaScore),
+            quietness_LinMeaScore=mean(quietness_LinMeaScore),
+            recommend_LinMeaScore=mean(recommend_LinMeaScore),
+# Summing up the 'n' column and removing the group structure.
+            n=sum(n),
+            .groups = "drop")
+```
+
+# Descriptive Analytics
+```{r}
+# Displaying frequency tables for star rating variables
+table(hospitals_data$Hosp.rating)
+table(hospitals_data$Patient.Survey.Rate)
+table(hospitals_data$cleanliness_star_Rate_Rating)
+table(hospitals_data$Nurse_Communication_Star_Rating)
+table(hospitals_data$Doctor_Communication_Star_Rating)
+table(hospitals_data$Staff_Responsiveness_Star_Rating)
+table(hospitals_data$Communication_About_Medicine_Star_Rating)
+table(hospitals_data$Discharge_Info_Star_Rating)
+table(hospitals_data$Care_Transition_Star_Rating)
+table(hospitals_data$Hospital_Rating_Star_Rating)
+table(hospitals_data$Quietness_Star_Rating)
+table(hospitals_data$Recommendation_Star_Rating)
+```
+
+```{r}
+#Displaying summary satistics for all Linear mean score variables
+summary(hospitals_data$cleanliness_LinMeaScore)
+summary(hospitals_data$nurse_comm_LinMeaScore)
+summary(hospitals_data$doc_comm_LinMeaScore)
+summary(hospitals_data$staff_response_LinMeaScore)
+summary(hospitals_data$med_commu_LinMeaScore)
+summary(hospitals_data$discharge_info_LinMeaScore)
+summary(hospitals_data$care_trans_LinMeaScore)
+summary(hospitals_data$hosp_rate_LinMeaScore)
+summary(hospitals_data$quietness_LinMeaScore)
+summary(hospitals_data$recommend_LinMeaScore)
+```
+
+```{r}
+#Hospital overall rating distribution
+library(ggplot2)
+# Creating a data frame for the counts
+rating_counts <- table(hospitals_data$Hosp.rating)
+rating_df <- data.frame(Rating = as.numeric(names(rating_counts)), Count = as.numeric(rating_counts))
+
+# Plotting the barplot
+ggplot(rating_df, aes(x = factor(Rating), y = Count)) +
+  geom_bar(stat = "identity", fill = "lightblue", color = "black") +
+  geom_text(aes(label = Count), vjust = -0.5, size = 3, color = "black") +
+  labs(title = "Distribution of Hospital Ratings", x = "Hospital Rating", y = "Frequency") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5, size = 10))
+```
+
+```{r}
+# Checkinh distribution of hospital rating variable after transformation to binary
+library(ggplot2)
+
+# Create a bar chart with values on top and custom x-axis labels
+bar_chart <- ggplot(hospitals_data, aes(x = factor(hosp_rate), fill = hosp_rate)) +
+  geom_bar(stat = "count", color = "black") +
+  geom_text(
+    aes(label = ..count.., y = ..count..),
+    stat = "count",
+    position = position_stack(vjust = 0.5),
+    color = "black",
+    size = 3
+  ) +
+  labs(title = "Distribution of Hospital Ratings",
+       x = "Experience",
+       y = "Count") +
+  scale_fill_manual(values = c("lightblue", "lightblue")) +  # Set light blue color
+  theme_minimal() +
+  scale_x_discrete(labels = c("0 (Negative)", "1 (Positive)"))  # Custom x-axis labels
+
+# Display the bar chart with values on top and custom x-axis labels
+print(bar_chart)
+
+```
+
+```{r}
+# Distribution of hospital types
+library(ggplot2)
+
+# Create a barplot with ggplot2
+ggplot(data = hospitals_data, aes(x = reorder(Hospital.Type, -table(Hospital.Type)[Hospital.Type]))) +
+  geom_bar(fill = "lightblue", color = "black") +
+  labs(title = "Distribution of Hospital Types", x = "Hospital Type", y = "Frequency") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8), 
+        plot.title = element_text(hjust = 0.5, size = 14))
+```
+
+```{r}
+# Hospital ownership distribution
+ggplot(data = hospitals_data, aes(y = reorder(Hospital.Ownership, -table(Hospital.Ownership)[Hospital.Ownership]))) +
+  geom_bar(fill = "lightblue", color = "black", stat = "count") +
+  geom_text(stat = 'count', aes(label = after_stat(count)), hjust = -0.0, size = 3, color = "black") +
+  labs(title = "Distribution of Hospital Types", y = "Hospital Ownership", x = "Frequency") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8),
+        plot.title = element_text(hjust = 0.5, size = 14),
+        plot.margin = unit(c(0, 80, 0, 0), "points"))  # Adjust left margin
+
+```
+
+```{r}
+# Distribution of star rating variables
+hist(hospitals_data$Patient.Survey.Rate,
+     main = 'Distribution of Patient Survey Rating',
+     xlab = 'Patient Survey Rating',
+     ylab = 'Frequency')
+
+hist(hospitals_data$cleanliness_star_Rate_Rating,
+     main = 'Distribution of Cleanliness Star Rating',
+     xlab = 'Cleanliness Star Rating',
+     ylab = 'Frequency')
+
+hist(hospitals_data$Nurse_Communication_Star_Rating,
+     main = 'Distribution of Nurse Communication Star Rating',
+     xlab = 'Nurse Communication Star Rating',
+     ylab = 'Frequency')
+
+hist(hospitals_data$Doctor_Communication_Star_Rating,
+     main = 'Distribution of Doctor Communication Star Rating',
+     xlab = 'Doctor Communication Star Rating',
+     ylab = 'Frequency')
+
+hist(hospitals_data$Staff_Responsiveness_Star_Rating,
+     main = 'Distribution of Staff Responsiveness Star Rating',
+     xlab = 'Staff Responsiveness Star Rating',
+     ylab = 'Frequency')
+
+hist(hospitals_data$Communication_About_Medicine_Star_Rating,
+     main = 'Distribution of Communication About Medicine Star Rating',
+     xlab = 'Communication About Medicine Star Rating',
+     ylab = 'Frequency')
+
+hist(hospitals_data$Discharge_Info_Star_Rating,
+     main = 'Distribution of Discharge Information Star Rating',
+     xlab = 'Discharge Information Star Rating',
+     ylab = 'Frequency')
+
+hist(hospitals_data$Care_Transition_Star_Rating,
+     main = 'Distribution of Care Transition Star Rating',
+     xlab = 'Care Transition Star Rating',
+     ylab = 'Frequency')
+
+hist(hospitals_data$Hospital_Rating_Star_Rating,
+     main = 'Distribution of Hospital Rating Star Rating',
+     xlab = 'Hospital Rating Star Rating',
+     ylab = 'Frequency')
+
+hist(hospitals_data$Quietness_Star_Rating,
+     main = 'Distribution of Quietness Star Rating',
+     xlab = 'Quietness Star Rating',
+     ylab = 'Frequency')
+
+hist(hospitals_data$Recommendation_Star_Rating,
+     main = 'Distribution of Recommendation Star Rating',
+     xlab = 'Recommendation Star Rating',
+     ylab = 'Frequency')
+
+```
+
+```{r}
+#Distributions of the Linear Mean Scores
+par(mfrow=c(2, 2))
+
+hist(hospitals_data$cleanliness_LinMeaScore,
+     main = 'Cleanliness Linear Mean Score',
+     xlab = 'Cleanliness Linear Mean Score',
+     ylab = 'Frequency')
+
+hist(hospitals_data$nurse_comm_LinMeaScore,
+     main = 'Nurse Communication Linear Mean Score',
+     xlab = 'Nurse Communication Linear Mean Score',
+     ylab = 'Frequency')
+
+hist(hospitals_data$doc_comm_LinMeaScore,
+     main = 'Doctor Communication Linear Mean Score',
+     xlab = 'Doctor Communication Linear Mean Score',
+     ylab = 'Frequency')
+
+hist(hospitals_data$staff_response_LinMeaScore,
+     main = 'Staff Responsiveness Linear Mean Score',
+     xlab = 'Staff Responsiveness Linear Mean Score',
+     ylab = 'Frequency')
+
+hist(hospitals_data$med_commu_LinMeaScore,
+     main = 'Communication About Medicine Linear Mean Score',
+     xlab = 'Communication About Medicine Linear Mean Score',
+     ylab = 'Frequency')
+
+hist(hospitals_data$discharge_info_LinMeaScore,
+     main = 'Discharge Information Linear Mean Score',
+     xlab = 'Discharge Information Linear Mean Score',
+     ylab = 'Frequency')
+
+hist(hospitals_data$care_trans_LinMeaScore,
+     main = 'Care Transition Linear Mean Score',
+     xlab = 'Care Transition Linear Mean Score',
+     ylab = 'Frequency')
+
+hist(hospitals_data$hosp_rate_LinMeaScore,
+     xlab = 'Overall Hospital Rating (LMV)',
+     main = 'Survey Response: Overall Hospital Rating (LMV)',
+     ylab = 'Frequency')
+
+hist(hospitals_data$quietness_LinMeaScore,
+     main = 'Quietness Linear Mean Score',
+     xlab = 'Quietness Linear Mean Score',
+     ylab = 'Frequency')
+
+hist(hospitals_data$recommend_LinMeaScore,
+     main = 'Recommendation Linear Mean Score',
+     xlab = 'Recommendation Linear Mean Score',
+     ylab = 'Frequency')
+
+```
+
+```{r}
+# Visualizing the relationship between different care aspects' linear mean scores and overall hospital rating
+par(mfrow=c(2, 2))
+
+plot(hospitals_data$cleanliness_LinMeaScore, hospitals_data$Hosp.rating,
+     main = "Cleanliness LM vs. Hospital Rating",
+     xlab = "Cleanliness LM",
+     ylab = "Hospital Rating")
+
+plot(hospitals_data$nurse_comm_LinMeaScore, hospitals_data$Hosp.rating,
+     main = "Nurse Communication LM vs. Hospital Rating",
+     xlab = "Nurse Communication LM",
+     ylab = "Hospital Rating")
+
+plot(hospitals_data$doc_comm_LinMeaScore, hospitals_data$Hosp.rating,
+     main = "Doctor Communication LM vs. Hospital Rating",
+     xlab = "Doctor Communication LM",
+     ylab = "Hospital Rating")
+
+plot(hospitals_data$staff_response_LinMeaScore, hospitals_data$Hosp.rating,
+     main = "Staff Responsiveness LM vs. Hospital Rating",
+     xlab = "Staff Responsiveness LM",
+     ylab = "Hospital Rating")
+
+plot(hospitals_data$med_commu_LinMeaScore, hospitals_data$Hosp.rating,
+     main = "Communication Abt Medicine LM vs. Hospital Rating",
+     xlab = "Communication Abt Medicine LM",
+     ylab = "Hospital Rating")
+
+plot(hospitals_data$discharge_info_LinMeaScore, hospitals_data$Hosp.rating,
+     main = "Discharge Information LM vs. Hospital Rating",
+     xlab = "Discharge Information LM",
+     ylab = "Hospital Rating")
+
+plot(hospitals_data$care_trans_LinMeaScore, hospitals_data$Hosp.rating,
+     main = "Care Transition LM vs. Hospital Rating",
+     xlab = "Care Transition LM",
+     ylab = "Hospital Rating")
+
+plot(hospitals_data$hosp_rate_LinMeaScore, hospitals_data$Hosp.rating,
+     main = "Hospital Rating LM vs. Hospital Rating",
+     xlab = "Hospital Rating LM",
+     ylab = "Hospital Rating")
+
+plot(hospitals_data$quietness_LinMeaScore, hospitals_data$Hosp.rating,
+     main = "Quietness LM vs. Hospital Rating",
+     xlab = "Quietness LM",
+     ylab = "Hospital Rating")
+
+plot(hospitals_data$recommend_LinMeaScore, hospitals_data$Hosp.rating,
+     main = "Recommendation LM vs. Hospital Rating",
+     xlab = "Recommendation LM",
+     ylab = "Hospital Rating")
+```
+
+
+```{r}
+# Distribution of hospital performnace related variables
+abbreviate_labels <- function(labels) {
+  abbreviations <- c("Above the national average" = "ANA", 
+                     "Same as the national average" = "SNA", 
+                     "Below the national average" = "BNA")
+  return(abbreviations[labels])
+}
+
+# Setting up a 2x4 grid for the bar plots
+par(mfrow = c(2, 4))
+
+
+create_barplot <- function(variable, main_title) {
+  table_data <- table(hospitals_data[[variable]])
+  abbreviated_labels <- abbreviate_labels(names(table_data))
+  barplot(table_data, col = "lightblue", border = "black", xlab = variable, ylab = "Frequency", main = main_title, names.arg = abbreviated_labels)
+}
+
+# Creating bar plots for each variable
+create_barplot("Mortality", "Distribution of Mortality Values")
+create_barplot("Safety", "Distribution of Safety Values")
+create_barplot("Readmission", "Distribution of Readmission Values")
+create_barplot("Effectiveness", "Distribution of Effectiveness Values")
+create_barplot("Timeliness", "Distribution of Timeliness Values")
+create_barplot("Efficient.imaging", "Distribution of Efficient Imaging Values")
+
+# Resetting the plotting layout
+par(mfrow = c(1, 1))
+
+```
+
+```{r}
+# #creating duplicate dataframe of hospitals_data and converting Hosp.rating to factor
+hospitals_data1 <- hospitals_data
+hospitals_data1$Hosp.rating <- as.factor(hospitals_data1$Hosp.rating)
+```
+
+```{r}
+# Converting the columns 22 to 33 to numeric values in the hospitals_data1 dataset
+
+for (i in 22:33) {
+  hospitals_data1[,i] <- as.numeric(unlist(hospitals_data1[,i]))
+}
+```
+
+```{r}
+# Plotting various star ratings against overall hospital rating for different aspects of care in hospitals_data1 dataset
+
+plot(hospitals_data1$cleanliness_star_Rate_Rating, hospitals_data1$Hosp.rating)
+plot(hospitals_data1$Nurse_Communication_Star_Rating, hospitals_data1$Hosp.rating)
+plot(hospitals_data1$Doctor_Communication_Star_Rating, hospitals_data1$Hosp.rating)
+plot(hospitals_data1$Staff_Responsiveness_Star_Rating, hospitals_data1$Hosp.rating)
+plot(hospitals_data1$Communication_About_Medicine_Star_Rating, hospitals_data1$Hosp.rating)
+plot(hospitals_data1$Discharge_Info_Star_Rating, hospitals_data1$Hosp.rating)
+plot(hospitals_data1$Care_Transition_Star_Rating, hospitals_data1$Hosp.rating)
+plot(hospitals_data1$Hospital_Rating_Star_Rating, hospitals_data1$Hosp.rating)
+plot(hospitals_data1$Quietness_Star_Rating, hospitals_data1$Hosp.rating)
+plot(hospitals_data1$Recommendation_Star_Rating, hospitals_data1$Hosp.rating)
+```
+
+```{r}
+# creating visulas to check relationship between variables
+library(ggplot2)
+
+# Creating jitter plots for each variable with hosp_rate
+vars <- c("cleanliness_LinMeaScore", "nurse_comm_LinMeaScore", "doc_comm_LinMeaScore", 
+          "staff_response_LinMeaScore", "med_commu_LinMeaScore", "discharge_info_LinMeaScore", 
+          "care_trans_LinMeaScore", "quietness_LinMeaScore", "recommend_LinMeaScore")
+
+# Looping through each variable and plot against hosp_rate
+for(predictor in vars) {
+  plot_title <- paste(predictor, "vs. Hospital Rating", sep = " ")
+   plot <- ggplot(hospitals_data, aes(x = hosp_rate, y = !!sym(predictor))) +
+    geom_jitter() +
+    labs(title = plot_title, x = "Hospital Rating", y = predictor)
+  
+  print(plot)  # Display the plot
+}
+```
+
+
+### Making Dataset Ready for Modeling ###
+
+```{r}
+#Creating a subset of predictors from hospitals_data dataset for modeling
+predictors <- hospitals_data[,31:41]
+# Dropping pain management varable as it is available only for 2016 and 2017
+predictors <- predictors[,-5] 
+summary(predictors)
+```
+
+```{r}
+# heatmap to check correlation between the Linear Mean score variables
+library(corrplot)
+corre <- cor(predictors, method = c("pearson"))
+gradient_colors <- colorRampPalette(c("darkblue", "white", "lightblue"))(100)
+corrplot(corre, addCoef.col = 1, tl.cex = 0.5, number.cex = 0.35, col = gradient_colors)
+```
+
+```{r}
+# Relative weights analysis to check contribution of each variable towards "Hosp.rating"
+library(rwa)
+rwa <- hospitals_data %>%
+  rwa(outcome = "Hosp.rating",
+      predictors = c("cleanliness_LinMeaScore", "nurse_comm_LinMeaScore",
+                     "doc_comm_LinMeaScore", "staff_response_LinMeaScore", 
+                     "med_commu_LinMeaScore", "discharge_info_LinMeaScore",
+                     "care_trans_LinMeaScore", "quietness_LinMeaScore","recommend_LinMeaScore","Hospital_Rating_Star_Rating"),
+      applysigns = TRUE)
+print(rwa)
+```
+
+##### The result of Relative weight analysis is showing that  care_trans_LinMeaScore, staff_response_LinMeaScore and  nurse_comm_LinMeaScore are being the most weighted variable, which means these variables are more influential in predicting model outcome compared to others independent variables in the model. #####
+
+
+```{r}
+# # visual to see the relative weight analysis results
+# library(ggplot2)
+# 
+# # Bar plot
+# ggplot(result_df, aes(x = reorder(Variables, Rescaled.RelWeight), y = Rescaled.RelWeight, fill = result$Sign.Rescaled.RelWeight)) +
+#   geom_bar(stat = "identity", position = "dodge", fill = "lightblue") +  # Set fill color to lightblue
+#   geom_text(aes(label = ifelse(Variables != "cleanliness", round(Rescaled.RelWeight, 2), "")),
+#             position = position_dodge(width = 0.9), vjust = 0.5) +  # Add labels for variables other than "cleanliness"
+#   labs(title = "Relative Weights of Predictors",
+#        x = "Predictors",
+#        y = "Rescaled Relative Weight",
+#        fill = "Sign") +
+#   theme_minimal() +
+#   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+#   coord_flip()  
+# Flipping the coordinates for better visibility
+```
+
+
+
+##### Shapley Value measures each independent variables contribution to the model's prediction.Higher values prove a more significant influence on  predictions outcome. As the result of Relative weight analysis  care_trans_LinMeaScore, staff_response_LinMeaScore and  nurse_comm_LinMeaScore are influencing then other variables, and they are considered the most weighted varaibles to predict hospital ratings. #####
+
+
+## Partitioning ##
+
+```{r}
+#splitting the data into 70% training and 30% test_dataing
+set.seed(123)
+split_index <- sample(1:nrow(hospitals_data), 0.7 * nrow(hospitals_data))
+train_data <- hospitals_data[split_index, ]
+test_data <- hospitals_data[-split_index, ]
+```
+
+### Logistic Regression Model ###
+
+```{r}
+# Running logistic regression on entire dataset "hospitals_data"
+log_model <- glm(hosp_rate ~ cleanliness_LinMeaScore +  nurse_comm_LinMeaScore +
+                  doc_comm_LinMeaScore + staff_response_LinMeaScore +
+                  med_commu_LinMeaScore + discharge_info_LinMeaScore + care_trans_LinMeaScore + 
+                   quietness_LinMeaScore + recommend_LinMeaScore + EHR_criteria + Emergency.Services + Mortality + Effectiveness + Timeliness + Safety + Readmission +Efficient.imaging + Hospital.Ownership , data = hospitals_data,
+                family='binomial'(link='logit'))
+summary(log_model)
+```
+
+####From the results we found that cleanliness, Nurse Communication, Staff Response, Recommendation, Mortality, Timeliness, Safety, Readmission, Efficient Imaging, and different categories of Hospital Ownership were significant factors.
+
+####Positive coefficients of variables indicate for each unit increase in variable score, the log-odds of a higher hospital rating increase by that coefficient value. whereas negative coefficient indicate that hospitals with variable rates below the national average are associated with a substantial decrease in the log-odds of higher ratings. 
+
+```{r}
+# Performing stepwise variable selection for logistic regression
+fwd_rate <- step(glm(formula = hosp_rate ~ 1, data = hospitals_data, family = binomial(link = 'logit')),
+             scope = formula(log_model), direction = 'forward')
+bkwd_rate <- step(log_model, direction = 'backward')
+```
+
+####Forward and backward selection process results suggests that cleanliness, nurse communication, staff communication, discharge information, care transitions, recommendation scores, mortality rates, and effectiveness, timeliness, safety, and readmission metrics are key factors influencing the overall hospital rating
+
+```{r}
+# Running logistic regression on train dataset using only the suggested variables from forward backward selection
+train_log <- glm(hosp_rate ~ care_trans_LinMeaScore + nurse_comm_LinMeaScore +
+                  discharge_info_LinMeaScore + cleanliness_LinMeaScore + staff_response_LinMeaScore + Effectiveness + Timeliness + Efficient.imaging + recommend_LinMeaScore + Mortality + Safety + Readmission,
+                 data = train_data,
+                 family = binomial(link = 'logit'))
+summary(train_log)
+
+summary(train_log)
+```
+####From the results we found that cleanliness_LinMeaScore, staff_response_LinMeaScore, Efficient.imagingBelow the national averagerecommend_LinMeaScore, MortalityBelow the national average, SafetyBelow the national averag,ReadmissionBelow the national average are significant factors.
+
+####Positive coefficients of variables indicate for each unit increase in variable score, the log-odds of a higher hospital rating increase by that coefficient value. whereas negative coefficient indicate that hospitals with variable rates below the national average are associated with a substantial decrease in the log-odds of higher ratings. 
+
+```{r}
+# Calculating and assigning predictions for hospital ratings using different logistic models
+test_data$pred_hosp_rate <- predict(train_log, newdata = test_data, type = 'response')
+test_data$pred_hosp_rate <- as.numeric(test_data$pred_hosp_rate)
+```
+
+```{r}
+# converting the predicted hospital rates in to binary factor
+test_data$pred_hosp_rate <- as.factor(ifelse(test_data$pred_hosp_rate >= 0.5, "1", "0"))
+test_data$hosp_rate <- as.factor(as.character(test_data$hosp_rate))
+```
+
+```{r}
+#checking the levles of both predicted and actual
+levels(hospitals_data$hosp_rate)
+levels(test_data$pred_hosp_rate)
+```
+
+```{r}
+#Confusion matrix for logistic regression
+library(caret)
+conf_matrix_log <- confusionMatrix(test_data$hosp_rate, test_data$pred_hosp_rate)
+print(conf_matrix_log)
+```
+
+####Results of the confusion matrix tells how well the model performed on new data.Overall Accuracy: The model accurately predicts hospital ratings 87.92% of the time.Sensitivity (0.9080) and Specificity (0.8011): values of sensitivity and specificity shows that the model is good at identifying both positive and negative cases.
+
+
+```{r}
+# Extracting error metrics from the confusion matrix
+accuracy_log <- conf_matrix_log$overall['Accuracy']
+precision_log <- conf_matrix_log$byClass['Precision']
+recall_log <- conf_matrix_log$byClass['Recall']
+f1_score_log <- conf_matrix_log$byClass['F1']
+
+print(precision_log)
+print(recall_log)
+print(f1_score_log)
+```
+
+```{r}
+# Converting factors to numeric to get error metrics
+test_data$pred_hosp_rate <- as.numeric(levels(test_data$pred_hosp_rate))[test_data$pred_hosp_rate]
+test_data$hosp_rate <- as.numeric(levels(test_data$hosp_rate))[test_data$hosp_rate]
+```
+
+```{r}
+# Calculate errors and error metrics
+error_hosp_rate <- test_data$hosp_rate - test_data$pred_hosp_rate
+mae_hosp_rate <- mean(abs(error_hosp_rate))
+mse_hosp_rate <- mean(error_hosp_rate^2)
+rmse_hosp_rate <- sqrt(mse_hosp_rate)
+
+# Creating df for metrics
+error_metrics <- data.frame(
+  Model = "hosp_rate",
+  MAE = mae_hosp_rate,
+  MSE = mse_hosp_rate,
+  RMSE = rmse_hosp_rate
+  
+)
+
+# Printing the error metrics dataframe
+print(error_metrics)
+```
+
+####Lower MAE, MSE, and RMSE values are desirable, indicating smaller prediction errors.
+
+```{r}
+# running cross validation for logistic regression model with 10 folds
+library(caret)
+set.seed(123)
+
+# Creating training control with 10-fold cross-validation
+ctrl_log <- trainControl(method = "cv", number = 10, summaryFunction = twoClassSummary, classProbs = TRUE)
+
+# Ensuring that hosp_rate is a factor variable
+train_data$hosp_rate <- as.factor(train_data$hosp_rate)
+
+# Creating a new variable for levels
+train_data$hosp_rate_levels <- train_data$hosp_rate
+
+# Setting levels using make.names
+levels(train_data$hosp_rate_levels) <- make.names(levels(train_data$hosp_rate))
+
+# Training the logistic regression model with cross-validation
+cv_log_results <- train(as.factor(hosp_rate_levels) ~ cleanliness_LinMeaScore + nurse_comm_LinMeaScore +
+                           doc_comm_LinMeaScore + staff_response_LinMeaScore +
+                           med_commu_LinMeaScore + discharge_info_LinMeaScore + care_trans_LinMeaScore + 
+                           quietness_LinMeaScore + recommend_LinMeaScore + EHR_criteria + 
+                           Emergency.Services + Mortality + Effectiveness + Timeliness + Safety + Readmission + 
+                           Efficient.imaging + Hospital.Ownership,
+                       data = train_data, method = "glm", family = "binomial", trControl = ctrl_log)
+
+# Printing the results
+print(cv_log_results)
+```
+
+####When 10-fold cross-validation was used to assess the logistic regression model, it produced a high ROC (Receiver Operating Characteristic) value of about 0.95. Suggesting it is better at differentiating between the two groups. The specificity, which indicates the accuracy in detecting negative situations, is roughly 78.03%, while the sensitivity, which measures the ability to accurately identify positive cases, is approximately 93.38%. These results imply that the model is promising for predicting hospital evaluations since it strikes a decent balance between accurately recognizing positive and negative incidents.
+
+#Random Forest Technique
+
+```{r}
+# Loading required libraries for random forest
+library(randomForest)
+```
+
+```{r}
+# random forest
+rf_model <- randomForest(as.factor(hosp_rate) ~ care_trans_LinMeaScore + nurse_comm_LinMeaScore+
+                  discharge_info_LinMeaScore + cleanliness_LinMeaScore + staff_response_LinMeaScore+ Effectiveness + Timeliness + Efficient.imaging + recommend_LinMeaScore + Mortality + Safety + Readmission, data = train_data, ntree = 200,
+mtry = 4, nodesize = 5, importance = TRUE,probability = TRUE)
+## variable importance plot
+importance_var <- varImpPlot(rf_model, type = 1)
+importance_var
+```
+#####The variable importance plot shows which variables are most important for predicting hospital rates in a random forest model. Important variables include Readmission, Safety, and Mortality significantly impacting the model's accuracy. Variables like Staff Response, Recommendations, and Nurse Communication also play important roles, while variables like Effectiveness and Timeliness have comparatively less impact. 
+
+
+
+```{r}
+# predicting hospital ratings on random forest model on the test data
+test_data$rf_model_pred <- predict(rf_model, test_data, type="response")
+```
+
+```{r}
+# Ensuring and setting both actual and predicted variable levels to be same
+test_data$hosp_rate <- as.factor(test_data$hosp_rate)
+levels(test_data$hosp_rate) <- levels(test_data$rf_model_pred)
+```
+
+```{r}
+# checking the levels of both actual and predicted
+levels(test_data$hosp_rate)
+levels(test_data$rf_model_pred)
+```
+
+```{r}
+# confusion matrix for random forest model
+conf_matrix_rf  <- confusionMatrix(test_data$rf_model_pred, factor(test_data$hosp_rate))
+conf_matrix_rf
+```
+####The confusion matrix assesses the model's performance on new data, indicating an overall accuracy of 87.64%. Sensitivity (0.9315) reflects the model's effectiveness in identifying high-rated hospitals, while specificity (0.7366) suggests a moderate success in distinguishing low-rated ones.
+
+```{r}
+# Extracting error metrics from the confusion matrix
+accuracy_rf <- conf_matrix_rf$overall['Accuracy']
+precision_rf <- conf_matrix_rf$byClass['Precision']
+recall_rf <- conf_matrix_rf$byClass['Recall']
+f1_score_rf <- conf_matrix_rf$byClass['F1']
+
+print(precision_log)
+print(recall_log)
+print(f1_score_log)
+```
+
+```{r}
+# validating random forset model performance using cross validation technique
+library(caret)
+set.seed(123)  
+ctrl <- trainControl(method = "cv", number = 10)
+cv_rf_results <- train(as.factor(hosp_rate) ~  cleanliness_LinMeaScore +  nurse_comm_LinMeaScore +
+                  doc_comm_LinMeaScore + staff_response_LinMeaScore +
+                  med_commu_LinMeaScore + discharge_info_LinMeaScore + care_trans_LinMeaScore + 
+                   quietness_LinMeaScore + recommend_LinMeaScore + EHR_criteria + Emergency.Services + Mortality + Effectiveness + Timeliness + Safety + Readmission +Efficient.imaging + Hospital.Ownership,
+              data = train_data, method = "rf", trControl = ctrl)
+cv_rf_results
+```
+
+####At each split, 16 features are used by the best Random Forest model, which was selected based on its maximum accuracy has kappa value of 0.73 and accuracy 89.86%. which means model is expected to be correct about 89.86% of the time, and the kappa value indicates a substantial level of agreement beyond chance. 
+
+#SVM model
+
+```{r}
+# Training the SVM model
+library(e1071)
+svm_model <- svm(hosp_rate ~ care_trans_LinMeaScore + nurse_comm_LinMeaScore+
+                  discharge_info_LinMeaScore + cleanliness_LinMeaScore + staff_response_LinMeaScore+ Effectiveness + Timeliness + Efficient.imaging + recommend_LinMeaScore + Mortality + Safety + Readmission  ,
+                   data = train_data,
+                  kernel = "linear")
+summary(svm_model)
+```
+
+```{r}
+library(caret)
+
+# Making predictions on the test set
+test_data$svm_pred <- predict(svm_model, newdata = test_data)
+
+
+test_data$hosp_rate = as.factor(test_data$hosp_rate)
+test_data$svm_pred = as.factor(test_data$svm_pred)
+# Creating a confusion matrix
+conf_matrix_SVM <- confusionMatrix(test_data$svm_pred, test_data$hosp_rate)
+print(conf_matrix_SVM)
+```
+
+####The SVM model's confusion matrix shows that its overall accuracy is roughly 87.49%. At 91.83%, the sensitivity is strong, indicating that the model can accurately identify hospitals with a high rating . Specificity, which measures how well the model can identify hospitals with low ratings, is approximately 76.47%. These findings imply that, with a marginally increased emphasis on sensitivity, the SVM model is useful for selecting highly rated hospitals. This makes it a potentially useful tool for identifying high-rated hospitals, but its ability to identify low-rated ones may be only marginally successful. 
+
+```{r}
+# Extracting error metrics from the confusion matrix
+accuracy_SVM <- conf_matrix_SVM$overall['Accuracy']
+precision_SVM <- conf_matrix_SVM$byClass['Precision']
+recall_SVM <- conf_matrix_SVM$byClass['Recall']
+f1_score_SVM <- conf_matrix_SVM$byClass['F1']
+
+print(precision_SVM)
+print(recall_SVM)
+print(f1_score_SVM)
+```
+
+
+```{r}
+#validating random forset model performance using cross validation technique
+library(caret)
+library(e1071)  
+
+# Setting seed for reproducibility
+set.seed(123)
+
+# Defining the SVM formula
+formula_svm <- as.formula("hosp_rate ~ cleanliness_LinMeaScore + nurse_comm_LinMeaScore +
+                           doc_comm_LinMeaScore + staff_response_LinMeaScore +
+                           med_commu_LinMeaScore + discharge_info_LinMeaScore + care_trans_LinMeaScore + 
+                           quietness_LinMeaScore + recommend_LinMeaScore + EHR_criteria + 
+                           Emergency.Services + Mortality + Effectiveness + Timeliness + Safety + Readmission + 
+                           Efficient.imaging + Hospital.Ownership")
+
+# Creating a training control with 10-fold cross-validation
+ctrl <- trainControl(method = "cv", number = 10)
+
+# Training the SVM model using cross-validation
+cv_svm_results <- train(formula_svm, data = train_data, method = "svmRadial", trControl = ctrl)
+
+# Printing the cross-validation results
+print(cv_svm_results)
+
+```
+
+####Using a 10-fold cross-validation with a Radial Basis Function (RBF) kernel, the SVM model achieved a kappa value of 0.73 and an accuracy of approximately 89.52% on the training set of data. For best results, the model's parameters were selected, with a fixed radial basis function parameter (sigma) of 0.0233 and a cost parameter (C) of 1. These results imply that the SVM model is good at predicting hospital ratings while maintaining a reasonable degree of generalization.
+
+
+
+
+```{r}
+# Creating a new trial dataset for prediction
+new_trial_data <- data.frame(
+  cleanliness_LinMeaScore = 85,
+  nurse_comm_LinMeaScore = 83,
+  doc_comm_LinMeaScore = 87,
+  staff_response_LinMeaScore = 89,
+  med_commu_LinMeaScore = 86,
+  discharge_info_LinMeaScore = 88,
+  care_trans_LinMeaScore = 82,
+  quietness_LinMeaScore = 84,
+  recommend_LinMeaScore = 86,
+  Mortality = "Below the national average",
+  Effectiveness = "Below the national average",
+  Timeliness = "Below the national average",
+  Safety = "Below the national average",
+  Readmission = "Below the national average",
+  Efficient.imaging = "Below the national average",
+  EHR_criteria = "1",
+  Emergency.Services = "Yes",
+  Hospital.Ownership =  "Government - Local"
+)
+```
+
+```{r}
+# Predicting hospital rates for the new trial dataset using the SVM model
+new_trial_data$predicted_hosp_rate <- predict(log_model, newdata = new_trial_data)
+new_trial_data$predicted_hosp_rate <- as.factor(ifelse(new_trial_data$predicted_hosp_rate> 0.6, "1", "0"))
+#test_data$hosp_rate <- as.factor(as.character(test_data$hosp_rate))
+```
